@@ -4,7 +4,6 @@ var path = require('path');
 var googlecdn = require('google-cdn');
 var bowerConfig = require('bower').config;
 
-
 module.exports = function (grunt) {
 
   grunt.registerMultiTask('cdnify', 'replace scripts with refs to the Google CDN', function () {
@@ -42,9 +41,59 @@ module.exports = function (grunt) {
           return cbInner(err);
         }
 
+        var cdnScriptRe = /<script\s+src\s*=\s*['"](?:[a-zA-Z]+:)?\/\/[^<]+<\/script>\r?\n?/;
+
+        var lines = content.split('\n'),
+            moveLineIndexes = [];
+
+        lines.forEach(function (line, i) {
+          if (line.search(cdnScriptRe) !== -1) {
+            moveLineIndexes.push(i);
+          }
+        });
+
+        try {
+          content = hoistLines({
+            lines: lines,
+            markerRegex: /<!--\s+build:js/,
+            moveLineIndexes: moveLineIndexes
+          });
+          grunt.log.writeln('Hoisted CDN <script> tags in ' + file.path);
+        } catch(e) {}
+
         grunt.file.write(file.path, content);
         cbInner();
       });
     }, this.async());
   });
+};
+
+function hoistLines(args) {
+  var lines = args.lines,
+      moveLineIndexes = args.moveLineIndexes,
+      markerRegex = args.markerRegex;
+
+  // pull all the lines out
+  var hoistLines = [];
+  while (moveLineIndexes.length > 0) {
+    hoistLines.unshift(lines.splice(moveLineIndexes.pop(), 1)[0]);
+  }
+
+  // find the marker line
+  var markerLineIndex;
+  var i;
+  for (i = 0; i < lines.length; i++) {
+    if (lines[i].search(markerRegex) !== -1) {
+      markerLineIndex = i;
+      break;
+    }
+  }
+  if (typeof markerLineIndex !== 'number') {
+    throw new Error('Marker not found');
+  }
+
+  // put all the lines back in
+  Array.prototype.splice.apply(lines, [markerLineIndex, 0].concat(hoistLines));
+
+  return lines.join('\n');
 };
